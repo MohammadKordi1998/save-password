@@ -3,6 +3,7 @@ from django.db.models import Q, F
 from roles.models import RoleModel
 from rest_framework import status
 from message.Message import Message
+from required.required import Required
 from .serializer import UserSerializer
 from rest_framework.views import APIView
 from django.contrib.auth import authenticate
@@ -23,6 +24,7 @@ class UserView(APIView):
 
     def get(self, request, pk=None):
         try:
+
             if pk is None:
                 users = Users.objects.filter(is_active=True).annotate(**self.annotate_key).values(*self.values)
                 message = Message(
@@ -30,16 +32,18 @@ class UserView(APIView):
                     status.HTTP_200_OK,
                     users
                 ).message()
+                return Response(message, status=status.HTTP_200_OK)
 
             else:
                 user = Users.objects.filter(id=pk, is_active=True).annotate(**self.annotate_key).values(*self.values)
-                user = user[0] if len(user) > 0 else {}
-
+                status_code = status.HTTP_200_OK if len(user) > 0 else status.HTTP_404_NOT_FOUND
+                user = user[0] if len(user) > 0 else 'Not Found User'
                 message = Message(
                     'OK',
-                    status.HTTP_200_OK,
+                    status_code,
                     user
                 ).message()
+                return Response(message, status=status_code)
 
         except Exception as ex:
             message = Message(
@@ -47,34 +51,31 @@ class UserView(APIView):
                 status.HTTP_400_BAD_REQUEST,
                 f'{ex}'
             ).message()
-
-        return Response(message, status=message['status_code'])
+            return Response(message, status=message['status_code'])
 
     def post(self, request):
         try:
-            is_requered = {
+            required = Required(
+                {
+                    'first_name': bool('first_name' in request.data),
+                    'last_name': bool('last_name' in request.data),
+                    'username': bool('username' in request.data),
+                    'role': bool(RoleModel.objects.filter(Q(role_name='user') | Q(role_name='User'))),
+                    'password': bool('password' in request.data)
+                },
+                {
+                    'first_name': 'type: string, min_len: 5, max_len: 100, unique: False',
+                    'last_name': 'type: string, min_len: 5, max_len: 100, unique: False',
+                    'username': {'type': "str", 'len': "100", 'unique': True},
+                    'role': bool(RoleModel.objects.filter(Q(role_name='user') | Q(role_name='User'))),
+                    'password': {'type': "str", 'len': "100", 'unique': False}
+                }
+            ).required()
 
-            }
-            is_first_name = bool('first_name' in request.data)
-            is_last_name = bool('last_name' in request.data)
-            is_username = bool('username' in request.data)
-            is_role_id = bool(RoleModel.objects.filter(Q(role_name='user') | Q(role_name='User')))
-            is_password = bool('password' in request.data)
+            if len(required) > 0:
+                return Response(required, status=status.HTTP_400_BAD_REQUEST)
 
-            if not is_first_name or not is_last_name or not is_username or not is_password:
-                message = Message(
-                    'Error',
-                    status.HTTP_400_BAD_REQUEST,
-                    {
-                        'first_name': 'str(first_name)',
-                        'last_name': 'str(last_name)',
-                        'username': 'str(username)',
-                        'password': 'str(password)',
-                    }
-                ).message()
-                return Response(message, status=message['status_code'])
-
-            if not is_role_id:
+            if not required['is_role_id']:
                 message = Message(
                     'Error',
                     status.HTTP_400_BAD_REQUEST,
