@@ -1,5 +1,7 @@
 import string
 import secrets
+
+from django.db.models import F
 from rest_framework import status
 from message.Message import Message
 from .models import SavePasswordModel
@@ -12,51 +14,40 @@ from rest_framework.permissions import IsAuthenticated
 class SavePasswordView(APIView):
     permission_classes = [IsAuthenticated]
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.annotate_key = dict(
+            first_name=F('user__first_name'),
+            last_name=F('user__last_name'),
+        )
+        self.values = ['id', 'site', 'username', 'password', 'first_name', 'last_name', 'datetime_created',
+                       'datetime_updated']
+
     def get(self, reqeust, pk=None):
         try:
             user_id = reqeust.user.id
+
             if pk is None:
-                all_save_password = SavePasswordModel.objects.filter(user_id=user_id)
-                save_password_list = []
-
-                for save_password in all_save_password:
-                    save_password_object = {
-                        'id': save_password.id,
-                        'site': save_password.site,
-                        'username': save_password.username,
-                        'password': save_password.password,
-                        'first_name': save_password.user.first_name,
-                        'last_name': save_password.user.last_name,
-                        'datetime_created': save_password.datetime_created,
-                        'datetime_updated': save_password.datetime_updated,
-                    }
-
-                    save_password_list.append(save_password_object)
+                all_save_password = SavePasswordModel.objects.filter(user_id=user_id) \
+                    .annotate(**self.annotate_key).values(*self.values)
 
                 message = Message(
                     "OK",
                     status.HTTP_200_OK,
-                    save_password_list
+                    all_save_password
                 ).message()
                 return Response(message, status=message['status_code'])
 
             else:
-                save_password = SavePasswordModel.objects.get(user_id=user_id, id=pk)
-                save_password_object = {
-                    'id': save_password.id,
-                    'site': save_password.site,
-                    'username': save_password.username,
-                    'password': save_password.password,
-                    'first_name': save_password.user.first_name,
-                    'last_name': save_password.user.last_name,
-                    'datetime_created': save_password.datetime_created,
-                    'datetime_updated': save_password.datetime_updated,
-                }
+                save_password = SavePasswordModel.objects.filter(user_id=user_id, id=pk) \
+                    .annotate(**self.annotate_key).values(*self.values)
+
+                save_password = save_password[0] if len(save_password) > 0 else 'Not Found'
 
                 message = Message(
                     "OK",
                     status.HTTP_200_OK,
-                    save_password_object
+                    save_password
                 ).message()
                 return Response(message, status=message['status_code'])
 

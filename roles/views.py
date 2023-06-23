@@ -1,3 +1,4 @@
+from required.required import Required
 from .models import RoleModel
 from rest_framework import status
 from message.Message import Message
@@ -9,31 +10,26 @@ from rest_framework.permissions import IsAuthenticated
 class RoleView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.role_all = RoleModel.objects.all()
-        self.role = RoleModel.objects
-
     def get(self, request, role_id=None):
         try:
             if role_id is None:
-                roles = self.role_all.values()
+                roles = RoleModel.objects.order_by('-datetime_created').values()
                 message = Message(
                     'ok',
                     status.HTTP_200_OK,
                     roles
                 ).message()
+
             else:
-                role = self.role.get(id=role_id)
+                role = RoleModel.objects.filter(id=role_id).values()
+                role = role[0] if len(role) > 0 else 'Not Found Role'
+
                 message = Message(
                     'ok',
                     status.HTTP_200_OK,
-                    {
-                        'id': role.id,
-                        'role_name': role.role_name,
-                        'datetime_created': role.datetime_created
-                    }
+                    role
                 ).message()
+
         except Exception as ex:
             message = Message(
                 'Error',
@@ -45,25 +41,38 @@ class RoleView(APIView):
 
     def post(self, request):
         try:
-            if bool('role_name' in request.data):
-                role_name = request.data['role_name']
-                role = self.role.create(
-                    role_name=role_name
+            required = Required(
+                {
+                    'role_name': bool('role_name' in request.data)
+                },
+                {
+                    'role_name': {
+                        'type': 'string',
+                        'min_len': 5,
+                        'max_len': 100,
+                        'unique': True
+                    },
+                }
+            ).required()
+
+            if len(required) > 0:
+                return Response(
+                    required,
+                    status=status.HTTP_400_BAD_REQUEST
                 )
 
-                message = Message(
-                    'ok',
-                    status.HTTP_200_OK,
-                    role.id
-                ).message()
-            else:
-                message = Message(
-                    'Error',
-                    status.HTTP_400_BAD_REQUEST,
-                    {
-                        'role_name': 'str(role_name)'
-                    }
-                ).message()
+            role_name = request.data['role_name']
+
+            role = RoleModel.objects.create(
+                role_name=role_name
+            )
+
+            message = Message(
+                'ok',
+                status.HTTP_200_OK,
+                role.id
+            ).message()
+
         except Exception as ex:
             message = Message(
                 'Error',
@@ -75,26 +84,39 @@ class RoleView(APIView):
 
     def put(self, request, role_id=None):
         try:
-            if bool('role_name' in request.data):
-                role_name = request.data['role_name']
-                role = self.role.get(id=role_id)
+            required = Required(
+                {
+                    'role_name': bool('role_name' in request.data)
+                },
+                {
+                    'role_name': {
+                        'type': 'string',
+                        'min_len': 5,
+                        'max_len': 100,
+                        'unique': True
+                    },
+                }
+            ).required()
 
-                role.role_name = role_name
-                role.save()
+            if len(required) > 0:
+                return Response(
+                    required,
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            role = RoleModel.objects.get(id=role_id)
+            role_name = request.data['role_name']
 
-                message = Message(
-                    'ok',
-                    status.HTTP_200_OK,
-                    role.id
-                ).message()
-            else:
-                message = Message(
-                    'Error',
-                    status.HTTP_400_BAD_REQUEST,
-                    {
-                        'role_name': 'str(role_name)'
-                    }
-                ).message()
+            role.role_name = role_name
+            role.save()
+
+            message = Message(
+                'ok',
+                status.HTTP_200_OK,
+                role.id
+            ).message()
+
+            return Response(message, status.HTTP_200_OK)
+
         except Exception as ex:
             message = Message(
                 'Error',
@@ -102,11 +124,11 @@ class RoleView(APIView):
                 f'{ex}'
             ).message()
 
-        return Response(message, message['status_code'])
+            return Response(message, status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, role_id=None):
         try:
-            role = self.role.get(id=role_id)
+            role = RoleModel.objects.get(id=role_id)
             role.delete()
 
             message = Message(
