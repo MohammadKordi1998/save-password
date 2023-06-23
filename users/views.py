@@ -64,25 +64,16 @@ class UserView(APIView):
                     'password': bool('password' in request.data)
                 },
                 {
-                    'first_name': 'type: string, min_len: 5, max_len: 100, unique: False',
-                    'last_name': 'type: string, min_len: 5, max_len: 100, unique: False',
-                    'username': {'type': "str", 'len': "100", 'unique': True},
-                    'role': bool(RoleModel.objects.filter(Q(role_name='user') | Q(role_name='User'))),
-                    'password': {'type': "str", 'len': "100", 'unique': False}
+                    'first_name': {'type': 'string', 'min_len': 5, 'max_len': 100, 'unique': False},
+                    'last_name': {'type': 'string', 'min_len': 5, 'max_len': 100, 'unique': False},
+                    'username': {'type': 'string', 'min_len': 5, 'max_len': 100, 'unique': True},
+                    'role': 'Not Found',
+                    'password': {'type': 'string', 'min_len': 5, 'max_len': 20, 'unique': False},
                 }
             ).required()
 
             if len(required) > 0:
                 return Response(required, status=status.HTTP_400_BAD_REQUEST)
-
-            if not required['is_role_id']:
-                message = Message(
-                    'Error',
-                    status.HTTP_400_BAD_REQUEST,
-                    'Not Found Role'
-                ).message()
-
-                return Response(message, status=message['status_code'])
 
             UserSerializer.first_name = request.data['first_name']
             UserSerializer.last_name = request.data['last_name']
@@ -90,15 +81,17 @@ class UserView(APIView):
             UserSerializer.role_id = RoleModel.objects.get(Q(role_name='user') | Q(role_name='User')).id
             UserSerializer.password = request.data['password']
 
-            find_username_in_db = bool(Users.objects.filter(username=UserSerializer.username))
+            required = Required(
+                {
+                    'username': not bool(Users.objects.filter(username=UserSerializer.username))
+                },
+                {
+                    'username': 'The UserName is Duplicate'
+                }
+            ).required()
 
-            if find_username_in_db:
-                message = Message(
-                    "Duplicate UserName",
-                    status.HTTP_400_BAD_REQUEST,
-                    "The UserName is Duplicate"
-                ).message()
-                return Response(message, status=message['status_code'])
+            if len(required) > 0:
+                return Response(required, status=status.HTTP_400_BAD_REQUEST)
 
             user = Users.objects.create_user(
                 first_name=UserSerializer.first_name,
@@ -109,11 +102,13 @@ class UserView(APIView):
             )
 
             Token.objects.create(user=user)
+
             message = Message(
                 "Create",
                 status.HTTP_200_OK,
                 user.id
             ).message()
+
             return Response(message, status=message['status_code'])
 
         except Exception as ex:
@@ -122,7 +117,7 @@ class UserView(APIView):
                 status.HTTP_400_BAD_REQUEST,
                 f'{ex}'
             ).message()
-            return Response(message, status=message['status_code'])
+            return Response(message, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk):
         try:
@@ -136,7 +131,7 @@ class UserView(APIView):
                 "The Deletion was Successful"
             ).message()
 
-            return Response(message, status=message['status_code'])
+            return Response(message, status=status.HTTP_200_OK)
 
         except Exception as ex:
             message = Message(
@@ -144,33 +139,33 @@ class UserView(APIView):
                 status.HTTP_400_BAD_REQUEST,
                 f'{ex}'
             )
-            return Response(message, status=message['status_code'])
+            return Response(message, status=status.HTTP_400_BAD_REQUEST)
 
 
 class Login(APIView):
 
     def post(self, request):
         try:
-            # start Check UserName
-            find_request_username = bool('username' in request.data)
-            message = Message("Error", status.HTTP_400_BAD_REQUEST,
-                              "Request username does not exist").message()
-            if find_request_username is False:
-                return Response(message, status=message['status_code'])
-            # End Check UserName
+            required = Required(
+                {
+                    'username': bool('username' in request.data),
+                    'password': bool('password' in request.data)
+                },
+                {
+                    'username': "Request username does not exist",
+                    'password': "Request password does not exist",
+                }
+            ).required()
 
-            # start Check Password
-            find_request_password = bool('password' in request.data)
-            message = Message("Error", status.HTTP_400_BAD_REQUEST,
-                              "Request password does not exist").message()
-            if find_request_password is False:
-                return Response(message, status=message['status_code'])
-            # End Check Password
+            if len(required) > 0:
+                return Response(required, status=status.HTTP_400_BAD_REQUEST)
 
-            username = request.data['username']
-            password = request.data['password']
+            object_login = dict(
+                username=request.data['username'],
+                password=request.data['password']
+            )
 
-            user = authenticate(username=username, password=password)
+            user = authenticate(**object_login)
 
             if user is not None:
                 message = Message(
@@ -179,6 +174,7 @@ class Login(APIView):
                     user.auth_token.key
                 ).message()
                 return Response(message, status=message['status_code'])
+
             else:
                 message = Message(
                     "UNAUTHORIZED",
@@ -201,9 +197,9 @@ class ChangeRoleUser(APIView):
 
     def post(self, request, pk):
         try:
-            user = Users.objects.get(id=pk)
+            user = Users.objects.get(id=pk, is_active=True)
             role = RoleModel.objects.get(id=request.data['roleId'])
-            user.is_staff = 1
+            # user.is_staff = 1
             user.role_id = role.id
             user.save()
             message = Message(
